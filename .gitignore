@@ -1,0 +1,29 @@
+# dependencies
+node_modules/
+
+<<<<<<< HEAD
+# environment variables
+.env
+
+# logs
+*.log
+
+# OS files
+.DS_Store
+
+# installers (optional)
+*.msi
+*.zip
+=======
+# environment variables (IMPORTANT)
+.env
+
+# credentials / secrets
+*.json
+
+# installers / binaries
+*.msi
+
+# logs
+*.log
+>>>>>>> 28344a79736b7b97d3b32cb232f7c4b232320145
