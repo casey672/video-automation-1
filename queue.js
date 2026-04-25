@@ -130,7 +130,6 @@ async function generateVoiceover(script) {
   );
 
   const data = await response.json();
-  console.log("🔍 TTS response:", JSON.stringify(data).substring(0, 200));
   if (!data.audioContent) throw new Error("TTS failed: " + JSON.stringify(data));
   console.log("✅ Voiceover generated");
   return data.audioContent;
@@ -248,6 +247,13 @@ async function generateVideo(job) {
 // =========================
 async function uploadToYouTube(videoUrl, title) {
   console.log("📺 Uploading to YouTube:", title);
+
+  // Fix title casing
+  const cleanTitle = title
+    .split(" ")
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(" ");
+
   const videoResponse = await fetch(videoUrl);
   const videoBuffer = await videoResponse.buffer();
   const tmpPath = `/tmp/${Date.now()}.mp4`;
@@ -258,7 +264,7 @@ async function uploadToYouTube(videoUrl, title) {
     part: ["snippet", "status"],
     requestBody: {
       snippet: {
-        title: title,
+        title: cleanTitle,
         description: "Auto-generated estate planning video by My Texas Estate Plan. Call (903) 561-8644.",
         tags: ["estate planning", "texas", "wills", "trusts", "tyler texas"],
         categoryId: "27"
@@ -311,11 +317,7 @@ async function processQueue() {
 
       try {
         const videoUrl = await generateVideo(job);
-        const cleanTitle = job.topic
-  .split(" ")
-  .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-  .join(" ");
-const ytUrl = await uploadToYouTube(videoUrl, cleanTitle);
+        const ytUrl = await uploadToYouTube(videoUrl, job.topic);
         await updateSheet(job.row, { status: "DONE", youtubeUrl: ytUrl });
       } catch (err) {
         console.log("❌ Job failed:", err.message);
