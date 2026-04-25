@@ -10,6 +10,9 @@ let processing = false;
 // GOOGLE AUTH CLIENT
 // =========================
 function getGoogleAuth() {
+function getGoogleAuth() {
+  console.log("🔍 GOOGLE_CLIENT_ID:", (process.env.GOOGLE_CLIENT_ID||"").trim().substring(0,20));
+  console.log("🔍 GOOGLE_REFRESH_TOKEN:", (process.env.GOOGLE_REFRESH_TOKEN||"").trim().substring(0,20));
   const oauth2Client = new google.auth.OAuth2(
     (process.env.GOOGLE_CLIENT_ID || "").trim(),
     (process.env.GOOGLE_CLIENT_SECRET || "").trim(),
