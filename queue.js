@@ -7,19 +7,31 @@ let processing = false;
 // SAFE SHEET UPDATE
 // =========================
 async function updateSheet(rowIndex, updates) {
-  if (!process.env.SHEET_WEBHOOK) {
-    console.log("⚠️ SHEET_WEBHOOK missing — skipping update");
-    return;
-  }
+if (!process.env.SHEET_WEBHOOK) {
+  console.log("❌ SHEET_WEBHOOK is missing — aborting request");
+  return;
+}
+console.log("🧪 SHEET_WEBHOOK =", process.env.SHEET_WEBHOOK);  
+console.log("📤 Sending to Sheets:", {
+    rowIndex,
+    updates,
+    url: process.env.SHEET_WEBHOOK
+  });
 
   try {
-    await fetch(process.env.SHEET_WEBHOOK, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ rowIndex, updates })
-    });
+const res = await fetch(process.env.SHEET_WEBHOOK, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ rowIndex, updates })
+});
+
+console.log("📥 Sheet response status:", res.status);
+
+const text = await res.text();
+console.log("📥 Sheet response:", text);
+
   } catch (err) {
-    console.log("⚠️ Sheet update failed:", err.message);
+    console.log("❌ Sheet update failed:", err.message);
   }
 }
 
