@@ -30,38 +30,27 @@ async function processQueue() {
   if (processing) return;
   processing = true;
 
-  while (queue.length > 0) {
-    const job = queue.shift();
+  console.log("🔥 PROCESS QUEUE STARTED");
 
-    try {
+  try {
+    while (queue.length > 0) {
+      const job = queue.shift();
+
       console.log("⚙️ Processing job:", job);
 
-      // mark as processing
-      if (job.row) {
-        await updateSheet(job.row, { status: "PROCESSING" });
-      }
+      await updateSheet(job.row, {
+        status: "PROCESSING"
+      });
 
-      // 🔥 YOUR REAL WORK WILL GO HERE LATER
-      await new Promise((res) => setTimeout(res, 2000));
+      // simulate work
+      await new Promise((r) => setTimeout(r, 2000));
 
-      // mark done
-      if (job.row) {
-        await updateSheet(job.row, {
-          status: "DONE",
-          output: "completed"
-        });
-      }
-
-    } catch (err) {
-      console.log("❌ Job failed:", err.message);
-
-      if (job.row) {
-        await updateSheet(job.row, {
-          status: "ERROR",
-          error: err.message
-        });
-      }
+      await updateSheet(job.row, {
+        status: "DONE"
+      });
     }
+  } catch (err) {
+    console.log("❌ Queue crashed:", err.message);
   }
 
   processing = false;
@@ -73,7 +62,6 @@ async function processQueue() {
 function enqueue(job) {
   console.log("📦 Adding job to queue");
 
-  // basic validation
   if (!job || !job.row) {
     console.log("⚠️ Invalid job format:", job);
     return;
