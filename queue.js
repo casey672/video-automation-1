@@ -122,6 +122,7 @@ async function generateVoiceover(script) {
   );
 
   const data = await response.json();
+  console.log("🔍 TTS response:", JSON.stringify(data).substring(0, 300));
   if (!data.audioContent) throw new Error("TTS failed: " + JSON.stringify(data));
   console.log("✅ Voiceover generated");
   return data.audioContent; // base64
