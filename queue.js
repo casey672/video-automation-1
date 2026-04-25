@@ -1,60 +1,86 @@
-const { runAutomation } = require("./automation");
+const fetch = require("node-fetch");
 
-const queue = [];
-let isProcessing = false;
+let queue = [];
+let processing = false;
 
-function enqueue(job) {
-  queue.push(job);
-}
-
+// =========================
+// SAFE SHEET UPDATE
+// =========================
 async function updateSheet(rowIndex, updates) {
-<<<<<<< HEAD
-  const SHEET_WEBHOOK =
-    "https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec";
-
-  await fetch(SHEET_WEBHOOK, {
-=======
-  await fetch(process.env.SHEET_WEBHOOK, {
->>>>>>> 28344a79736b7b97d3b32cb232f7c4b232320145
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ rowIndex, updates })
-  });
-}
-
-async function processQueue() {
-  if (isProcessing || queue.length === 0) return;
-
-  const job = queue.shift();
-  isProcessing = true;
-
-  const { rowIndex, topic } = job;
-
-  try {
-    await updateSheet(rowIndex, { status: "PROCESSING" });
-
-    const result = await runAutomation(job);
-
-    await updateSheet(rowIndex, {
-      status: "DONE",
-      yt_script: result.script,
-      yt_url: result.videoUrl || "",
-      social_caption: result.caption,
-      linkedin_status: "READY",
-      facebook_status: "READY",
-      gbp_status: "READY"
-    });
-
-  } catch (err) {
-    await updateSheet(rowIndex, {
-      status: "ERROR",
-      last_error: err.message
-    });
+  if (!process.env.SHEET_WEBHOOK) {
+    console.log("⚠️ SHEET_WEBHOOK missing — skipping update");
+    return;
   }
 
-  isProcessing = false;
+  try {
+    await fetch(process.env.SHEET_WEBHOOK, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rowIndex, updates })
+    });
+  } catch (err) {
+    console.log("⚠️ Sheet update failed:", err.message);
+  }
 }
 
-setInterval(processQueue, 3000);
+// =========================
+// PROCESS QUEUE
+// =========================
+async function processQueue() {
+  if (processing) return;
+  processing = true;
+
+  while (queue.length > 0) {
+    const job = queue.shift();
+
+    try {
+      console.log("⚙️ Processing job:", job);
+
+      // mark as processing
+      if (job.row) {
+        await updateSheet(job.row, { status: "PROCESSING" });
+      }
+
+      // 🔥 YOUR REAL WORK WILL GO HERE LATER
+      await new Promise((res) => setTimeout(res, 2000));
+
+      // mark done
+      if (job.row) {
+        await updateSheet(job.row, {
+          status: "DONE",
+          output: "completed"
+        });
+      }
+
+    } catch (err) {
+      console.log("❌ Job failed:", err.message);
+
+      if (job.row) {
+        await updateSheet(job.row, {
+          status: "ERROR",
+          error: err.message
+        });
+      }
+    }
+  }
+
+  processing = false;
+}
+
+// =========================
+// ENQUEUE
+// =========================
+function enqueue(job) {
+  console.log("📦 Adding job to queue");
+
+  // basic validation
+  if (!job || !job.row) {
+    console.log("⚠️ Invalid job format:", job);
+    return;
+  }
+
+  queue.push(job);
+  processQueue();
+}
 
 module.exports = { enqueue };
