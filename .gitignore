@@ -1,4 +1,7 @@
-node_modules/
+auth.js
+client_secret*.json
+gbp-seo-tool*.json
+topic-state.json
+*.msi
+*.zip
 .env
-*.log
-.DS_Store
