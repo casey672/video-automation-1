@@ -1,6 +1,15 @@
 require("dotenv").config();
 const express = require("express");
 
+// 🔥 GLOBAL ERROR HANDLERS (put here)
+process.on("unhandledRejection", (err) => {
+  console.error("❌ Unhandled rejection:", err);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("❌ Uncaught exception:", err);
+});
+
 const app = express();
 app.use(express.json());
 
@@ -29,18 +38,30 @@ try {
 // MAIN WEBHOOK (Google Sheets)
 // =========================
 app.post("/runAutomation", (req, res) => {
-  const job = req.body;
+  try {
+    const job = req.body;
 
-  console.log("📥 Received job:", job);
+    console.log("📥 Received job:", job);
 
-  if (enqueue) {
-    enqueue(job);
+    if (enqueue) {
+      enqueue(job);
+    } else {
+      console.log("⚠️ Queue not available — job skipped");
+    }
+
+    res.json({
+      status: "queued",
+      message: "Job received"
+    });
+
+  } catch (err) {
+    console.error("❌ Route error:", err.message);
+
+    res.status(500).json({
+      status: "error",
+      message: "Server failed to process job"
+    });
   }
-
-  res.json({
-    status: "queued",
-    message: "Job received"
-  });
 });
 
 // =========================
