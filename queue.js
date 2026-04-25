@@ -1,3 +1,4 @@
+require("dotenv").config();
 const fetch = require("node-fetch");
 const { google } = require("googleapis");
 const fs = require("fs");
@@ -7,12 +8,11 @@ let queue = [];
 let processing = false;
 
 // =========================
-// GOOGLE AUTH CLIENT
+// GOOGLE AUTH
 // =========================
 function getGoogleAuth() {
-function getGoogleAuth() {
-  console.log("🔍 GOOGLE_CLIENT_ID:", (process.env.GOOGLE_CLIENT_ID||"").trim().substring(0,20));
-  console.log("🔍 GOOGLE_REFRESH_TOKEN:", (process.env.GOOGLE_REFRESH_TOKEN||"").trim().substring(0,20));
+  console.log("🔍 GOOGLE_CLIENT_ID:", (process.env.GOOGLE_CLIENT_ID || "").trim().substring(0, 20));
+  console.log("🔍 GOOGLE_REFRESH_TOKEN:", (process.env.GOOGLE_REFRESH_TOKEN || "").trim().substring(0, 20));
   const oauth2Client = new google.auth.OAuth2(
     (process.env.GOOGLE_CLIENT_ID || "").trim(),
     (process.env.GOOGLE_CLIENT_SECRET || "").trim(),
@@ -29,12 +29,12 @@ function getGoogleAuth() {
 // =========================
 function getYouTubeClient() {
   const oauth2Client = new google.auth.OAuth2(
-    process.env.YOUTUBE_CLIENT_ID,
-    process.env.YOUTUBE_CLIENT_SECRET,
+    (process.env.YOUTUBE_CLIENT_ID || "").trim(),
+    (process.env.YOUTUBE_CLIENT_SECRET || "").trim(),
     "http://localhost:3000/oauth2callback"
   );
   oauth2Client.setCredentials({
-    refresh_token: process.env.YOUTUBE_REFRESH_TOKEN
+    refresh_token: (process.env.YOUTUBE_REFRESH_TOKEN || "").trim()
   });
   return google.youtube({ version: "v3", auth: oauth2Client });
 }
@@ -56,9 +56,9 @@ async function generateScript(topic) {
 
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
-   headers: {
+    headers: {
       "Content-Type": "application/json",
-      "x-api-key": process.env.ANTHROPIC_API_KEY.trim(),
+      "x-api-key": (process.env.ANTHROPIC_API_KEY || "").trim(),
       "anthropic-version": "2023-06-01"
     },
     body: JSON.stringify({
@@ -88,7 +88,7 @@ Return ONLY the script text.`
 }
 
 // =========================
-// STEP 2 — GOOGLE TTS (OAuth)
+// STEP 2 — GOOGLE TTS
 // =========================
 async function generateVoiceover(script) {
   console.log("🎙️ Generating voiceover...");
@@ -132,20 +132,20 @@ async function generateVoiceover(script) {
   );
 
   const data = await response.json();
-  console.log("🔍 TTS response:", JSON.stringify(data).substring(0, 300));
+  console.log("🔍 TTS response:", JSON.stringify(data).substring(0, 200));
   if (!data.audioContent) throw new Error("TTS failed: " + JSON.stringify(data));
   console.log("✅ Voiceover generated");
-  return data.audioContent; // base64
+  return data.audioContent;
 }
 
 // =========================
-// STEP 3 — CLOUDINARY UPLOAD
+// STEP 3 — CLOUDINARY
 // =========================
 async function uploadToCloudinary(audioBase64) {
   console.log("☁️ Uploading audio to Cloudinary...");
-  const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
-  const apiKey = process.env.CLOUDINARY_API_KEY;
-  const apiSecret = process.env.CLOUDINARY_API_SECRET;
+  const cloudName = (process.env.CLOUDINARY_CLOUD_NAME || "").trim();
+  const apiKey = (process.env.CLOUDINARY_API_KEY || "").trim();
+  const apiSecret = (process.env.CLOUDINARY_API_SECRET || "").trim();
 
   const timestamp = Math.floor(Date.now() / 1000).toString();
   const signatureStr = `folder=mytxestateplan&timestamp=${timestamp}${apiSecret}`;
@@ -170,14 +170,14 @@ async function uploadToCloudinary(audioBase64) {
 }
 
 // =========================
-// STEP 4 — PEXELS VIDEO
+// STEP 4 — PEXELS
 // =========================
 async function fetchPexelsVideo(topic) {
   console.log("🎬 Fetching Pexels background...");
   const keywords = topic.split(" ").slice(0, 3).join(" ");
   const response = await fetch(
     `https://api.pexels.com/videos/search?query=${encodeURIComponent(keywords)}&per_page=5&orientation=portrait`,
-    { headers: { Authorization: process.env.PEXELS_API_KEY } }
+    { headers: { Authorization: (process.env.PEXELS_API_KEY || "").trim() } }
   );
 
   const result = await response.json();
@@ -191,20 +191,17 @@ async function fetchPexelsVideo(topic) {
 }
 
 // =========================
-// STEP 5 — CREATOMATE RENDER
+// STEP 5 — CREATOMATE
 // =========================
 async function renderWithCreatomate(script, audioUrl, bgUrl) {
   console.log("🎨 Rendering with Creatomate...");
-  const modifications = {
-    voiceover: audioUrl,
-    captions: script
-  };
+  const modifications = { voiceover: audioUrl, captions: script };
   if (bgUrl) modifications.background_video = bgUrl;
 
   const response = await fetch("https://api.creatomate.com/v1/renders", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${process.env.CREATOMATE_API_KEY}`,
+      Authorization: `Bearer ${(process.env.CREATOMATE_API_KEY || "").trim()}`,
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
@@ -223,7 +220,7 @@ async function pollCreatomate(renderId) {
   for (let i = 0; i < 30; i++) {
     await new Promise(r => setTimeout(r, 10000));
     const response = await fetch(`https://api.creatomate.com/v1/renders/${renderId}`, {
-      headers: { Authorization: `Bearer ${process.env.CREATOMATE_API_KEY}` }
+      headers: { Authorization: `Bearer ${(process.env.CREATOMATE_API_KEY || "").trim()}` }
     });
     const result = await response.json();
     console.log("Render status:", result.status);
@@ -234,7 +231,7 @@ async function pollCreatomate(renderId) {
 }
 
 // =========================
-// FULL VIDEO PIPELINE
+// FULL PIPELINE
 // =========================
 async function generateVideo(job) {
   console.log("🎬 Starting full pipeline for:", job.topic);
