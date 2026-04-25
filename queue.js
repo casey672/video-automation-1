@@ -40,17 +40,18 @@ function getYouTubeClient() {
 // =========================
 // STEP 1 — GENERATE SCRIPT
 // =========================
-async function generateScript(topic) {
-  console.log("✍️ Generating script for:", topic);
-  const hooks = [
+async function generateScript(job) {
+  console.log("✍️ Generating script for:", job.topic);
+  
+  // Use pre-generated hook if available, otherwise pick random
+  const hook = job.hook || [
     "Most families in Texas get this wrong.",
     "This mistake can cost your family thousands.",
     "Nobody tells you this about wills.",
     "If you own a home in Texas, listen.",
     "Your ex could inherit your money. Here's why.",
     "Dying without a will in Texas is expensive."
-  ];
-  const hook = hooks[Math.floor(Math.random() * hooks.length)];
+  ][Math.floor(Math.random() * 6)];
 
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -66,13 +67,14 @@ async function generateScript(topic) {
         role: "user",
         content: `Write a 7-10 second YouTube Shorts script for My Texas Estate Plan, an estate planning law firm in Tyler, Texas.
 
-HOOK (use this as your opening): ${hook}
-TOPIC: ${topic}
-VOICE: Casey Cook, estate planning attorney. Dry, deadpan Texas humor.
+HOOK (use this EXACT line to open): ${hook}
+TOPIC: ${job.topic}
+VOICE: Casey Cook, estate planning attorney. Dry, deadpan Texas humor. Self-deprecating. Never preachy.
 
 RULES:
-- Hook MUST be the first line
-- 2-3 sentences max
+- Hook MUST be the FIRST line verbatim
+- 2-3 sentences max after the hook
+- Fast punchline or cliffhanger ending
 - No hashtags, no markdown, no asterisks
 - End with: Call Casey — (903) 561-8644
 
