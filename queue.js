@@ -53,9 +53,9 @@ async function generateScript(topic) {
 
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
-    headers: {
+   headers: {
       "Content-Type": "application/json",
-      "x-api-key": process.env.ANTHROPIC_API_KEY,
+      "x-api-key": process.env.ANTHROPIC_API_KEY.trim(),
       "anthropic-version": "2023-06-01"
     },
     body: JSON.stringify({
