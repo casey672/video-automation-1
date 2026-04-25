@@ -90,7 +90,14 @@ Return ONLY the script text.`
 async function generateVoiceover(script) {
   console.log("🎙️ Generating voiceover...");
   const auth = getGoogleAuth();
-  const { token } = await auth.getAccessToken();
+  let token;
+  try {
+    const result = await auth.getAccessToken();
+    token = result.token;
+    console.log("🔑 Got access token:", token ? "YES" : "NO");
+  } catch (err) {
+    throw new Error("OAuth token failed: " + err.message);
+  }
 
   const cleanText = script
     .replace(/\*/g, "")
