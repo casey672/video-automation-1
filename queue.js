@@ -11,8 +11,6 @@ let processing = false;
 // GOOGLE AUTH
 // =========================
 function getGoogleAuth() {
-  console.log("🔍 GOOGLE_CLIENT_ID:", (process.env.GOOGLE_CLIENT_ID || "").trim().substring(0, 20));
-  console.log("🔍 GOOGLE_REFRESH_TOKEN:", (process.env.GOOGLE_REFRESH_TOKEN || "").trim().substring(0, 20));
   const oauth2Client = new google.auth.OAuth2(
     (process.env.GOOGLE_CLIENT_ID || "").trim(),
     (process.env.GOOGLE_CLIENT_SECRET || "").trim(),
@@ -313,7 +311,11 @@ async function processQueue() {
 
       try {
         const videoUrl = await generateVideo(job);
-        const ytUrl = await uploadToYouTube(videoUrl, job.topic);
+        const cleanTitle = job.topic
+  .split(" ")
+  .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+  .join(" ");
+const ytUrl = await uploadToYouTube(videoUrl, cleanTitle);
         await updateSheet(job.row, { status: "DONE", youtubeUrl: ytUrl });
       } catch (err) {
         console.log("❌ Job failed:", err.message);
