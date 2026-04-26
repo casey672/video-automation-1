@@ -281,6 +281,51 @@ async function uploadToYouTube(videoUrl, title) {
   console.log("✅ Uploaded:", ytUrl);
   return ytUrl;
 }
+async function generateAndPostBlog(topic) {
+  console.log('📝 Generating blog for:', topic);
+  
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": (process.env.ANTHROPIC_API_KEY || "").trim(),
+      "anthropic-version": "2023-06-01"
+    },
+    body: JSON.stringify({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 1500,
+      messages: [{
+        role: "user",
+        content: `Write an 800-word SEO blog post for My Texas Estate Plan, an estate planning law firm in Tyler, Texas.
+
+TOPIC: ${topic}
+
+STRUCTURE:
+- H1: Keyword-optimized title
+- Introduction (2-3 sentences, hook the reader)
+- 3-4 main sections with H2 headers
+- FAQ section (3 questions)
+- Conclusion with CTA
+
+RULES:
+- Include "estate planning attorney Tyler Texas" naturally
+- Plain English, no legal jargon
+- Reference Tyler or East Texas at least 3 times
+- End with: Call Casey at (903) 561-8644 or visit mytxestateplan.com
+- No markdown asterisks, no bullet points in intro
+- Return plain text only`
+      }]
+    })
+  });
+
+  const data = await response.json();
+  const blogContent = data.content[0].text.trim();
+  
+  const { postBlogToLevitate } = require('./levitate');
+  await postBlogToLevitate(topic, blogContent);
+  
+  return blogContent;
+}
 
 // =========================
 // SHEET UPDATE
