@@ -384,15 +384,11 @@ async function processQueue() {
         const ytUrl = await uploadToYouTube(videoUrl, job.topic);
         await updateSheet(job.row, { status: "DONE", youtubeUrl: ytUrl });
 
-     // Auto-post blog to Levitate
-if (process.env.LEVITATE_ENABLED === 'true') {
-  try {
-    await generateAndPostBlog(job.topic);
-  } catch (blogErr) {
-    console.log("⚠️ Levitate blog post failed:", blogErr.message);
-  }
-} else {
-  console.log("⏭️ Levitate blog posting disabled — skipping");
+// Generate blog and email to Tammy always
+try {
+  await generateAndPostBlog(job.topic);
+} catch (blogErr) {
+  console.log("⚠️ Blog generation failed:", blogErr.message);
 }
 
       } catch (err) {
