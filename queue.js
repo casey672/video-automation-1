@@ -384,12 +384,16 @@ async function processQueue() {
         const ytUrl = await uploadToYouTube(videoUrl, job.topic);
         await updateSheet(job.row, { status: "DONE", youtubeUrl: ytUrl });
 
-        // Auto-post blog to Levitate
-        try {
-          await generateAndPostBlog(job.topic);
-        } catch (blogErr) {
-          console.log("⚠️ Levitate blog post failed:", blogErr.message);
-        }
+     // Auto-post blog to Levitate
+if (process.env.LEVITATE_ENABLED === 'true') {
+  try {
+    await generateAndPostBlog(job.topic);
+  } catch (blogErr) {
+    console.log("⚠️ Levitate blog post failed:", blogErr.message);
+  }
+} else {
+  console.log("⏭️ Levitate blog posting disabled — skipping");
+}
 
       } catch (err) {
         console.log("❌ Job failed:", err.message);
