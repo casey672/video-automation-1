@@ -277,8 +277,15 @@ async function uploadToYouTube(videoUrl, title) {
   });
 
   fs.unlinkSync(tmpPath);
-  const ytUrl = `https://www.youtube.com/watch?v=${res.data.id}`;
-  console.log("✅ Uploaded:", ytUrl);
+  const ytUrl = await uploadToYouTube(videoUrl, job.topic);
+await updateSheet(job.row, { status: "DONE", youtubeUrl: ytUrl });
+
+// Auto-post blog to Levitate
+try {
+  await generateAndPostBlog(job.topic);
+} catch (err) {
+  console.log("⚠️ Levitate blog post failed:", err.message);
+}
   return ytUrl;
 }
 async function generateAndPostBlog(topic) {
@@ -389,6 +396,69 @@ function enqueue(job) {
   }
   queue.push(job);
   processQueue();
+}
+
+async function generateAndPostBlog(topic) {
+  console.log("📝 Generating blog for:", topic);
+  
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": (process.env.ANTHROPIC_API_KEY || "").trim(),
+      "anthropic-version": "2023-06-01"
+    },
+    body: JSON.stringify({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 1500,
+      messages: [{
+        role: "user",
+        content: `Write an 800-word SEO blog post for My Texas Estate Plan, an estate planning law firm in Tyler, Texas.
+
+TOPIC: ${topic}
+
+STRUCTURE:
+- H1: Keyword-optimized title
+- Introduction (2-3 sentences)
+- 3-4 main sections with H2 headers
+- FAQ section (3 questions)
+- Conclusion with CTA
+
+RULES:
+- Include "estate planning attorney Tyler Texas" naturally
+- Plain English, no legal jargon
+- Reference Tyler or East Texas at least 3 times
+- End with: Call Casey at (903) 561-8644 or visit mytxestateplan.com
+- Return plain text only`
+      }]
+    })
+  });
+
+  const data = await response.json();
+  const blogContent = data.content[0].text.trim();
+  console.log("✅ Blog generated:", blogContent.substring(0, 100));
+
+  // Fetch Pexels image for blog
+  const imageUrl = await fetchPexelsImage(topic);
+  console.log("🖼️ Blog image:", imageUrl);
+
+  // Post to Levitate
+  const { postBlogToLevitate } = require('./levitate');
+  await postBlogToLevitate(topic, blogContent, imageUrl);
+}
+
+async function fetchPexelsImage(topic) {
+  console.log("🖼️ Fetching Pexels image for blog...");
+  const keywords = topic.split(" ").slice(0, 3).join(" ");
+  const response = await fetch(
+    `https://api.pexels.com/v1/search?query=${encodeURIComponent(keywords)}&per_page=1&orientation=landscape`,
+    { headers: { Authorization: (process.env.PEXELS_API_KEY || "").trim() } }
+  );
+  const result = await response.json();
+  if (result.photos && result.photos.length > 0) {
+    return result.photos[0].src.large;
+  }
+  return null;
 }
 
 module.exports = { enqueue };
