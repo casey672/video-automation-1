@@ -40,11 +40,10 @@ function getYouTubeClient() {
 // =========================
 // STEP 1 — GENERATE SCRIPT
 // =========================
-async function generateScript(job) {
-  console.log("✍️ Generating script for:", job.topic);
-  
-  // Use pre-generated hook if available, otherwise pick random
-  const hook = job.hook || [
+async function generateScript(topic, hook) {
+  console.log("✍️ Generating script for:", topic);
+
+  const selectedHook = hook || [
     "Most families in Texas get this wrong.",
     "This mistake can cost your family thousands.",
     "Nobody tells you this about wills.",
@@ -67,8 +66,8 @@ async function generateScript(job) {
         role: "user",
         content: `Write a 7-10 second YouTube Shorts script for My Texas Estate Plan, an estate planning law firm in Tyler, Texas.
 
-HOOK (use this EXACT line to open): ${hook}
-TOPIC: ${job.topic}
+HOOK (use this EXACT line to open): ${selectedHook}
+TOPIC: ${topic}
 VOICE: Casey Cook, estate planning attorney. Dry, deadpan Texas humor. Self-deprecating. Never preachy.
 
 RULES:
@@ -169,7 +168,7 @@ async function uploadToCloudinary(audioBase64) {
 }
 
 // =========================
-// STEP 4 — PEXELS
+// STEP 4 — PEXELS VIDEO
 // =========================
 async function fetchPexelsVideo(topic) {
   console.log("🎬 Fetching Pexels background...");
@@ -230,11 +229,11 @@ async function pollCreatomate(renderId) {
 }
 
 // =========================
-// FULL PIPELINE
+// FULL VIDEO PIPELINE
 // =========================
 async function generateVideo(job) {
   console.log("🎬 Starting full pipeline for:", job.topic);
-  const script = await generateScript(job.topic);
+  const script = await generateScript(job.topic, job.hook);
   console.log("📝 Script:", script);
   const audioBase64 = await generateVoiceover(script);
   const audioUrl = await uploadToCloudinary(audioBase64);
@@ -250,7 +249,6 @@ async function generateVideo(job) {
 async function uploadToYouTube(videoUrl, title) {
   console.log("📺 Uploading to YouTube:", title);
 
-  // Fix title casing
   const cleanTitle = title
     .split(" ")
     .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
@@ -277,20 +275,31 @@ async function uploadToYouTube(videoUrl, title) {
   });
 
   fs.unlinkSync(tmpPath);
-  const ytUrl = await uploadToYouTube(videoUrl, job.topic);
-await updateSheet(job.row, { status: "DONE", youtubeUrl: ytUrl });
-
-// Auto-post blog to Levitate
-try {
-  await generateAndPostBlog(job.topic);
-} catch (err) {
-  console.log("⚠️ Levitate blog post failed:", err.message);
-}
+  const ytUrl = `https://www.youtube.com/watch?v=${res.data.id}`;
+  console.log("✅ Uploaded:", ytUrl);
   return ytUrl;
 }
+
+// =========================
+// BLOG GENERATION + LEVITATE
+// =========================
+async function fetchPexelsImage(topic) {
+  console.log("🖼️ Fetching Pexels image for blog...");
+  const keywords = topic.split(" ").slice(0, 3).join(" ");
+  const response = await fetch(
+    `https://api.pexels.com/v1/search?query=${encodeURIComponent(keywords)}&per_page=1&orientation=landscape`,
+    { headers: { Authorization: (process.env.PEXELS_API_KEY || "").trim() } }
+  );
+  const result = await response.json();
+  if (result.photos && result.photos.length > 0) {
+    return result.photos[0].src.large;
+  }
+  return null;
+}
+
 async function generateAndPostBlog(topic) {
-  console.log('📝 Generating blog for:', topic);
-  
+  console.log("📝 Generating blog for:", topic);
+
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -309,7 +318,7 @@ TOPIC: ${topic}
 
 STRUCTURE:
 - H1: Keyword-optimized title
-- Introduction (2-3 sentences, hook the reader)
+- Introduction (2-3 sentences)
 - 3-4 main sections with H2 headers
 - FAQ section (3 questions)
 - Conclusion with CTA
@@ -319,7 +328,6 @@ RULES:
 - Plain English, no legal jargon
 - Reference Tyler or East Texas at least 3 times
 - End with: Call Casey at (903) 561-8644 or visit mytxestateplan.com
-- No markdown asterisks, no bullet points in intro
 - Return plain text only`
       }]
     })
@@ -327,11 +335,13 @@ RULES:
 
   const data = await response.json();
   const blogContent = data.content[0].text.trim();
-  
-  const { postBlogToLevitate } = require('./levitate');
-  await postBlogToLevitate(topic, blogContent);
-  
-  return blogContent;
+  console.log("✅ Blog generated:", blogContent.substring(0, 100));
+
+  const imageUrl = await fetchPexelsImage(topic);
+  console.log("🖼️ Blog image:", imageUrl);
+
+  const { postBlogToLevitate } = require("./levitate");
+  await postBlogToLevitate(topic, blogContent, imageUrl);
 }
 
 // =========================
@@ -373,6 +383,14 @@ async function processQueue() {
         const videoUrl = await generateVideo(job);
         const ytUrl = await uploadToYouTube(videoUrl, job.topic);
         await updateSheet(job.row, { status: "DONE", youtubeUrl: ytUrl });
+
+        // Auto-post blog to Levitate
+        try {
+          await generateAndPostBlog(job.topic);
+        } catch (blogErr) {
+          console.log("⚠️ Levitate blog post failed:", blogErr.message);
+        }
+
       } catch (err) {
         console.log("❌ Job failed:", err.message);
         await updateSheet(job.row, { status: "ERROR: " + err.message });
@@ -396,69 +414,6 @@ function enqueue(job) {
   }
   queue.push(job);
   processQueue();
-}
-
-async function generateAndPostBlog(topic) {
-  console.log("📝 Generating blog for:", topic);
-  
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": (process.env.ANTHROPIC_API_KEY || "").trim(),
-      "anthropic-version": "2023-06-01"
-    },
-    body: JSON.stringify({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 1500,
-      messages: [{
-        role: "user",
-        content: `Write an 800-word SEO blog post for My Texas Estate Plan, an estate planning law firm in Tyler, Texas.
-
-TOPIC: ${topic}
-
-STRUCTURE:
-- H1: Keyword-optimized title
-- Introduction (2-3 sentences)
-- 3-4 main sections with H2 headers
-- FAQ section (3 questions)
-- Conclusion with CTA
-
-RULES:
-- Include "estate planning attorney Tyler Texas" naturally
-- Plain English, no legal jargon
-- Reference Tyler or East Texas at least 3 times
-- End with: Call Casey at (903) 561-8644 or visit mytxestateplan.com
-- Return plain text only`
-      }]
-    })
-  });
-
-  const data = await response.json();
-  const blogContent = data.content[0].text.trim();
-  console.log("✅ Blog generated:", blogContent.substring(0, 100));
-
-  // Fetch Pexels image for blog
-  const imageUrl = await fetchPexelsImage(topic);
-  console.log("🖼️ Blog image:", imageUrl);
-
-  // Post to Levitate
-  const { postBlogToLevitate } = require('./levitate');
-  await postBlogToLevitate(topic, blogContent, imageUrl);
-}
-
-async function fetchPexelsImage(topic) {
-  console.log("🖼️ Fetching Pexels image for blog...");
-  const keywords = topic.split(" ").slice(0, 3).join(" ");
-  const response = await fetch(
-    `https://api.pexels.com/v1/search?query=${encodeURIComponent(keywords)}&per_page=1&orientation=landscape`,
-    { headers: { Authorization: (process.env.PEXELS_API_KEY || "").trim() } }
-  );
-  const result = await response.json();
-  if (result.photos && result.photos.length > 0) {
-    return result.photos[0].src.large;
-  }
-  return null;
 }
 
 module.exports = { enqueue };
