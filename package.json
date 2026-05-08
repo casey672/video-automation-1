@@ -14,6 +14,7 @@
     "fluent-ffmpeg": "^2.1.2",
     "googleapis": "^118.0.0",
     "node-fetch": "^2.6.9",
+    "puppeteer": "^24.42.0",
     "puppeteer-core": "^24.42.0"
   },
   "description": "",

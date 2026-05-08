@@ -40,27 +40,16 @@ try {
 app.post("/runAutomation", (req, res) => {
   try {
     const job = req.body;
-
     console.log("📥 Received job:", job);
-
     if (enqueue) {
       enqueue(job);
     } else {
       console.log("⚠️ Queue not available — job skipped");
     }
-
-    res.json({
-      status: "queued",
-      message: "Job received"
-    });
-
+    res.json({ status: "queued", message: "Job received" });
   } catch (err) {
     console.error("❌ Route error:", err.message);
-
-    res.status(500).json({
-      status: "error",
-      message: "Server failed to process job"
-    });
+    res.status(500).json({ status: "error", message: "Server failed to process job" });
   }
 });
 
