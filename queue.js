@@ -38,19 +38,112 @@ function getYouTubeClient() {
 }
 
 // =========================
+// COMEDY ENGINE
+// =========================
+function getComedyScenario() {
+  var scenarios = [
+    "adult children fighting over meaningless furniture",
+    "family members searching for passwords after death",
+    "Dad hiding legal documents in insane locations",
+    "people thinking handwritten notes solve probate",
+    "DIY estate plans causing chaos",
+    "people avoiding estate planning for 30 years",
+    "blended family inheritance tension",
+    "children discovering parents own 14 bank accounts",
+    "people treating junk like priceless heirlooms",
+    "clients believing probate only happens to rich people",
+    "someone hiding cash in coffee cans",
+    "families arguing over guns, trucks, and fishing boats",
+    "retirement accounts with missing beneficiaries",
+    "people thinking a will avoids probate",
+    "families discovering secret subscriptions after death"
+  ];
+  return scenarios[Math.floor(Math.random() * scenarios.length)];
+}
+
+function getDeliveryStyle() {
+  var styles = [
+    "deadpan documentary narration",
+    "overly serious legal explanation of something ridiculous",
+    "calm Texas attorney explaining family chaos",
+    "soft-spoken disappointment",
+    "awkward observational humor",
+    "dry sarcastic storytelling",
+    "matter-of-fact emotional damage",
+    "PBS documentary tone about absurd behavior"
+  ];
+  return styles[Math.floor(Math.random() * styles.length)];
+}
+
+function getVideoFormat() {
+  var formats = [
+    "Things Texas families do instead of estate planning",
+    "Estate planning problems nobody talks about",
+    "Conversations that happen after someone dies",
+    "Things children discover during probate",
+    "Actual reasons families fight",
+    "Estate planning myths people absolutely believe",
+    "What clients think will happen versus reality",
+    "How not to leave your family organized"
+  ];
+  return formats[Math.floor(Math.random() * formats.length)];
+}
+
+function getFamilyCharacter() {
+  var chars = [
+    "the cousin who suddenly wants the truck",
+    "the son who never answers texts until inheritance is mentioned",
+    "the daughter trying to guess iPhone passwords",
+    "the stepdad nobody trusts",
+    "the aunt who thinks probate is illegal",
+    "the sibling who becomes a financial expert overnight",
+    "Dad who hid everything in coffee cans",
+    "the family member who printed a will from the internet"
+  ];
+  return chars[Math.floor(Math.random() * chars.length)];
+}
+
+function buildVideoScriptPrompt(topic, hook) {
+  var scenario = getComedyScenario();
+  var style = getDeliveryStyle();
+  var format = getVideoFormat();
+  var character = getFamilyCharacter();
+
+  return "Write a 45-60 second YouTube Shorts script for My Texas Estate Plan, an estate planning law firm in Tyler, Texas.\n\n" +
+    "TOPIC: " + topic + "\n" +
+    "FORMAT: " + format + "\n" +
+    "COMEDY SCENARIO: " + scenario + "\n" +
+    "DELIVERY STYLE: " + style + "\n" +
+    "FEATURE THIS CHARACTER: " + character + "\n\n" +
+    "OPENING HOOK (use this or make it stronger): " + (hook || "Your children should not need detective skills to settle your estate.") + "\n\n" +
+    "STYLE RULES:\n" +
+    "- Write like a calm East Texas attorney who has seen the same family mistakes hundreds of times and is no longer surprised by human behavior\n" +
+    "- Humor should be dry, observational, subtle, and relatable\n" +
+    "- Short punchy sentences\n" +
+    "- Use awkward pauses occasionally (written as '...')\n" +
+    "- Avoid loud comedy or trying too hard\n" +
+    "- Make the audience feel 'this is painfully true'\n" +
+    "- Focus on realistic family behavior\n" +
+    "- Avoid legal jargon\n" +
+    "- No emojis, no hashtags, no cheesy motivational language\n" +
+    "- No overexplaining\n\n" +
+    "STRUCTURE:\n" +
+    "1. Strong pattern interrupt opening (1-2 sentences)\n" +
+    "2. Escalating relatable situation (3-4 sentences)\n" +
+    "3. Understated punchline (1 sentence)\n" +
+    "4. Calm CTA mentioning (903) 561-8644\n\n" +
+    "EXAMPLE TONE:\n" +
+    "'Your children should not need detective skills to settle your estate.'\n" +
+    "'Probate is basically grief plus paperwork plus group projects.'\n" +
+    "'Every family has one relative who suddenly becomes a legal expert.'\n\n" +
+    "Return ONLY the script text. No labels, no formatting.";
+}
+
+// =========================
 // STEP 1 — GENERATE SCRIPT
 // =========================
 async function generateScript(topic, hook) {
   console.log("✍️ Generating script for:", topic);
-
-  const selectedHook = hook || [
-    "Most families in Texas get this wrong.",
-    "This mistake can cost your family thousands.",
-    "Nobody tells you this about wills.",
-    "If you own a home in Texas, listen.",
-    "Your ex could inherit your money. Here's why.",
-    "Dying without a will in Texas is expensive."
-  ][Math.floor(Math.random() * 6)];
 
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -61,23 +154,10 @@ async function generateScript(topic, hook) {
     },
     body: JSON.stringify({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 300,
+      max_tokens: 400,
       messages: [{
         role: "user",
-        content: `Write a 7-10 second YouTube Shorts script for My Texas Estate Plan, an estate planning law firm in Tyler, Texas.
-
-HOOK (use this EXACT line to open): ${selectedHook}
-TOPIC: ${topic}
-VOICE: Casey Cook, estate planning attorney. Dry, deadpan Texas humor. Self-deprecating. Never preachy.
-
-RULES:
-- Hook MUST be the FIRST line verbatim
-- 2-3 sentences max after the hook
-- Fast punchline or cliffhanger ending
-- No hashtags, no markdown, no asterisks
-- End with: Call Casey — (903) 561-8644
-
-Return ONLY the script text.`
+        content: buildVideoScriptPrompt(topic, hook)
       }]
     })
   });
@@ -85,7 +165,6 @@ Return ONLY the script text.`
   const data = await response.json();
   return data.content[0].text.trim();
 }
-
 // =========================
 // STEP 2 — GOOGLE TTS
 // =========================
