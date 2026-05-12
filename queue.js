@@ -272,8 +272,18 @@ async function fetchPexelsVideo(topic) {
 // =========================
 async function renderWithCreatomate(script, audioUrl, bgUrl) {
   console.log("🎨 Rendering with Creatomate...");
-  const modifications = { voiceover: audioUrl, captions: script };
-  if (bgUrl) modifications.background_video = bgUrl;
+  
+  const modifications = { 
+    voiceover: audioUrl, 
+    captions: script 
+  };
+  
+  // Only add background_video if we have a valid URL
+  if (bgUrl && bgUrl.startsWith("http")) {
+    modifications.background_video = bgUrl;
+  }
+  // If no valid Pexels URL, just use voiceover + captions only
+  // Creatomate template will use its default background
 
   const response = await fetch("https://api.creatomate.com/v1/renders", {
     method: "POST",
@@ -286,6 +296,11 @@ async function renderWithCreatomate(script, audioUrl, bgUrl) {
       modifications
     })
   });
+
+  const result = await response.json();
+  if (!result[0] || !result[0].id) throw new Error("Creatomate failed: " + JSON.stringify(result));
+  return await pollCreatomate(result[0].id);
+}
 
   const result = await response.json();
   if (!result[0] || !result[0].id) throw new Error("Creatomate failed: " + JSON.stringify(result));
