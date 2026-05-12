@@ -165,6 +165,7 @@ async function generateScript(topic, hook) {
   const data = await response.json();
   return data.content[0].text.trim();
 }
+
 // =========================
 // STEP 2 — GOOGLE TTS
 // =========================
@@ -272,18 +273,16 @@ async function fetchPexelsVideo(topic) {
 // =========================
 async function renderWithCreatomate(script, audioUrl, bgUrl) {
   console.log("🎨 Rendering with Creatomate...");
-  
-  const modifications = { 
-    voiceover: audioUrl, 
-    captions: script 
+
+  const modifications = {
+    voiceover: audioUrl,
+    captions: script
   };
-  
+
   // Only add background_video if we have a valid URL
   if (bgUrl && bgUrl.startsWith("http")) {
     modifications.background_video = bgUrl;
   }
-  // If no valid Pexels URL, just use voiceover + captions only
-  // Creatomate template will use its default background
 
   const response = await fetch("https://api.creatomate.com/v1/renders", {
     method: "POST",
@@ -296,11 +295,6 @@ async function renderWithCreatomate(script, audioUrl, bgUrl) {
       modifications
     })
   });
-
-  const result = await response.json();
-  if (!result[0] || !result[0].id) throw new Error("Creatomate failed: " + JSON.stringify(result));
-  return await pollCreatomate(result[0].id);
-}
 
   const result = await response.json();
   if (!result[0] || !result[0].id) throw new Error("Creatomate failed: " + JSON.stringify(result));
@@ -375,7 +369,7 @@ async function uploadToYouTube(videoUrl, title) {
 }
 
 // =========================
-// BLOG GENERATION + LEVITATE
+// BLOG GENERATION
 // =========================
 async function fetchPexelsImage(topic) {
   console.log("🖼️ Fetching Pexels image for blog...");
@@ -433,9 +427,7 @@ RULES:
 
   const imageUrl = await fetchPexelsImage(topic);
   console.log("🖼️ Blog image:", imageUrl);
-
-  const { postBlogToLevitate } = require("./levitate");
-  await postBlogToLevitate(topic, blogContent, imageUrl);
+  console.log("📝 Blog ready (Levitate disabled):", blogContent.substring(0, 100));
 }
 
 // =========================
@@ -478,12 +470,11 @@ async function processQueue() {
         const ytUrl = await uploadToYouTube(videoUrl, job.topic);
         await updateSheet(job.row, { status: "DONE", youtubeUrl: ytUrl });
 
-// Generate blog and email to Tammy always
-try {
-  await generateAndPostBlog(job.topic);
-} catch (blogErr) {
-  console.log("⚠️ Blog generation failed:", blogErr.message);
-}
+        try {
+          await generateAndPostBlog(job.topic);
+        } catch (blogErr) {
+          console.log("⚠️ Blog generation failed:", blogErr.message);
+        }
 
       } catch (err) {
         console.log("❌ Job failed:", err.message);
