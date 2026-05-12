@@ -259,13 +259,36 @@ async function fetchPexelsVideo(topic) {
   );
 
   const result = await response.json();
-  if (!result.videos || result.videos.length === 0) return null;
 
-  const files = result.videos[0].video_files
-    .filter(f => f.quality === "hd" || f.quality === "sd")
-    .sort((a, b) => b.width - a.width);
+  if (result.videos && result.videos.length > 0) {
+    const files = result.videos[0].video_files
+      .filter(f => f.quality === "hd" || f.quality === "sd")
+      .sort((a, b) => b.width - a.width);
+    if (files.length > 0) return files[0].link;
+  }
 
-  return files.length > 0 ? files[0].link : null;
+  // Fallback: search for generic background when topic returns no results
+  console.log("🎬 No Pexels results for topic, trying fallback...");
+  const fallbackTerms = ["office desk", "family home", "texas", "law office"];
+  for (const term of fallbackTerms) {
+    const fallback = await fetch(
+      `https://api.pexels.com/videos/search?query=${encodeURIComponent(term)}&per_page=1&orientation=portrait`,
+      { headers: { Authorization: (process.env.PEXELS_API_KEY || "").trim() } }
+    );
+    const fallbackResult = await fallback.json();
+    if (fallbackResult.videos && fallbackResult.videos.length > 0) {
+      const files = fallbackResult.videos[0].video_files
+        .filter(f => f.quality === "hd" || f.quality === "sd")
+        .sort((a, b) => b.width - a.width);
+      if (files.length > 0) {
+        console.log("✅ Fallback Pexels video found:", term);
+        return files[0].link;
+      }
+    }
+  }
+
+  console.log("⚠️ No Pexels video found, using no background.");
+  return null;
 }
 
 // =========================
