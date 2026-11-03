@@ -166,7 +166,10 @@ async function fetchPexelsVideo(topic) {
   const result = await response.json();
 
   if (result.videos && result.videos.length > 0) {
-    const files = result.videos[0].video_files
+    // Use the longest clip of the results so the background covers the voiceover (looped in Creatomate as a backstop).
+    const longest = result.videos.slice().sort((a, b) => (b.duration || 0) - (a.duration || 0))[0];
+    console.log("🎬 Pexels clip duration:", longest.duration, "s");
+    const files = longest.video_files
       .filter(f => f.quality === "hd" || f.quality === "sd")
       .sort((a, b) => b.width - a.width);
     if (files.length > 0) return files[0].link;
@@ -177,12 +180,13 @@ async function fetchPexelsVideo(topic) {
   const fallbackTerms = ["office desk", "family home", "texas", "law office"];
   for (const term of fallbackTerms) {
     const fallback = await fetch(
-      `https://api.pexels.com/videos/search?query=${encodeURIComponent(term)}&per_page=1&orientation=portrait`,
+      `https://api.pexels.com/videos/search?query=${encodeURIComponent(term)}&per_page=5&orientation=portrait`,
       { headers: { Authorization: (process.env.PEXELS_API_KEY || "").trim() } }
     );
     const fallbackResult = await fallback.json();
     if (fallbackResult.videos && fallbackResult.videos.length > 0) {
-      const files = fallbackResult.videos[0].video_files
+      const fbLongest = fallbackResult.videos.slice().sort((a, b) => (b.duration || 0) - (a.duration || 0))[0];
+      const files = fbLongest.video_files
         .filter(f => f.quality === "hd" || f.quality === "sd")
         .sort((a, b) => b.width - a.width);
       if (files.length > 0) {
@@ -210,6 +214,7 @@ async function renderWithCreatomate(script, audioUrl, bgUrl) {
   // Only add background_video if we have a valid URL
   if (bgUrl && bgUrl.startsWith("http")) {
     modifications.background_video = bgUrl;
+    modifications["background_video.loop"] = true; // repeat short clips instead of going black
   }
 
   const response = await fetch("https://api.creatomate.com/v1/renders", {
