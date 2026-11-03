@@ -38,105 +38,10 @@ function getYouTubeClient() {
 }
 
 // =========================
-// COMEDY ENGINE
+// SCRIPT PROMPT (MARKETING-approved wording, 2026-11-03)
 // =========================
-function getComedyScenario() {
-  var scenarios = [
-    "adult children fighting over meaningless furniture",
-    "family members searching for passwords after death",
-    "Dad hiding legal documents in insane locations",
-    "people thinking handwritten notes solve probate",
-    "DIY estate plans causing chaos",
-    "people avoiding estate planning for 30 years",
-    "blended family inheritance tension",
-    "children discovering parents own 14 bank accounts",
-    "people treating junk like priceless heirlooms",
-    "clients believing probate only happens to rich people",
-    "someone hiding cash in coffee cans",
-    "families arguing over guns, trucks, and fishing boats",
-    "retirement accounts with missing beneficiaries",
-    "people thinking a will avoids probate",
-    "families discovering secret subscriptions after death"
-  ];
-  return scenarios[Math.floor(Math.random() * scenarios.length)];
-}
-
-function getDeliveryStyle() {
-  var styles = [
-    "deadpan documentary narration",
-    "overly serious legal explanation of something ridiculous",
-    "calm Texas attorney explaining family chaos",
-    "soft-spoken disappointment",
-    "awkward observational humor",
-    "dry sarcastic storytelling",
-    "matter-of-fact emotional damage",
-    "PBS documentary tone about absurd behavior"
-  ];
-  return styles[Math.floor(Math.random() * styles.length)];
-}
-
-function getVideoFormat() {
-  var formats = [
-    "Things Texas families do instead of estate planning",
-    "Estate planning problems nobody talks about",
-    "Conversations that happen after someone dies",
-    "Things children discover during probate",
-    "Actual reasons families fight",
-    "Estate planning myths people absolutely believe",
-    "What clients think will happen versus reality",
-    "How not to leave your family organized"
-  ];
-  return formats[Math.floor(Math.random() * formats.length)];
-}
-
-function getFamilyCharacter() {
-  var chars = [
-    "the cousin who suddenly wants the truck",
-    "the son who never answers texts until inheritance is mentioned",
-    "the daughter trying to guess iPhone passwords",
-    "the stepdad nobody trusts",
-    "the aunt who thinks probate is illegal",
-    "the sibling who becomes a financial expert overnight",
-    "Dad who hid everything in coffee cans",
-    "the family member who printed a will from the internet"
-  ];
-  return chars[Math.floor(Math.random() * chars.length)];
-}
-
 function buildVideoScriptPrompt(topic, hook) {
-  var scenario = getComedyScenario();
-  var style = getDeliveryStyle();
-  var format = getVideoFormat();
-  var character = getFamilyCharacter();
-
-  return "Write a 45-60 second YouTube Shorts script for My Texas Estate Plan, an estate planning law firm in Tyler, Texas.\n\n" +
-    "TOPIC: " + topic + "\n" +
-    "FORMAT: " + format + "\n" +
-    "COMEDY SCENARIO: " + scenario + "\n" +
-    "DELIVERY STYLE: " + style + "\n" +
-    "FEATURE THIS CHARACTER: " + character + "\n\n" +
-    "OPENING HOOK (use this or make it stronger): " + (hook || "Your children should not need detective skills to settle your estate.") + "\n\n" +
-    "STYLE RULES:\n" +
-    "- Write like a calm East Texas attorney who has seen the same family mistakes hundreds of times and is no longer surprised by human behavior\n" +
-    "- Humor should be dry, observational, subtle, and relatable\n" +
-    "- Short punchy sentences\n" +
-    "- Use awkward pauses occasionally (written as '...')\n" +
-    "- Avoid loud comedy or trying too hard\n" +
-    "- Make the audience feel 'this is painfully true'\n" +
-    "- Focus on realistic family behavior\n" +
-    "- Avoid legal jargon\n" +
-    "- No emojis, no hashtags, no cheesy motivational language\n" +
-    "- No overexplaining\n\n" +
-    "STRUCTURE:\n" +
-    "1. Strong pattern interrupt opening (1-2 sentences)\n" +
-    "2. Escalating relatable situation (3-4 sentences)\n" +
-    "3. Understated punchline (1 sentence)\n" +
-    "4. Calm CTA mentioning (903) 561-8644\n\n" +
-    "EXAMPLE TONE:\n" +
-    "'Your children should not need detective skills to settle your estate.'\n" +
-    "'Probate is basically grief plus paperwork plus group projects.'\n" +
-    "'Every family has one relative who suddenly becomes a legal expert.'\n\n" +
-    "Return ONLY the script text. No labels, no formatting.";
+  return "Write a 45-60 second YouTube Short script for My Texas Estate Plan, a Tyler, Texas estate planning and probate law firm led by attorney Casey Cook. Topic: " + topic + ".\nVoice: a calm, friendly East Texas attorney explaining something to a neighbor. Plain English, short sentences, no legal jargon without a one-line explanation.\nStructure: (1) a one-sentence hook that names a real situation families face; (2) two or three clear points about how this works under Texas law; (3) one practical next step the viewer can take; (4) close with: \"This is general information, not legal advice. Every family's situation is different. If you'd like to talk through yours, call My Texas Estate Plan in Tyler.\"\nRules: no jokes, sarcasm or irony about death, illness, grief or family conflict. No guarantees or promises of outcomes. No specific dollar amounts, percentages or timelines unless they are fixed by Texas statute. No words like \"best,\" \"expert,\" \"specialist,\" \"always\" or \"never.\" No fear words like destroy, nightmare, disaster or ruin. Don't invent cases, clients or testimonials. Don't mention past results.\nReturn ONLY the script text. No labels, no formatting.";
 }
 
 // =========================
