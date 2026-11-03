@@ -74,6 +74,28 @@ async function generateScript(topic, hook) {
 // =========================
 // STEP 2 — GOOGLE TTS
 // =========================
+// Voice is set by the TTS_VOICE env var so Casey (owner) can pick from the samples
+// (voice-samples.js) without a code change. Default: a Chirp 3 HD voice.
+// Pricing (Google, Nov 2026): Chirp 3 HD $30 / 1M chars, Neural2 $16 / 1M chars,
+// first 1M chars free each month. ~2 videos/day ≈ 60k chars/month, inside the free tier.
+const DEFAULT_TTS_VOICE = "en-US-Chirp3-HD-Charon";
+
+function buildTtsRequest(text, voiceName) {
+  const name = (voiceName || process.env.TTS_VOICE || DEFAULT_TTS_VOICE).trim();
+  const isChirp = /Chirp3-HD/i.test(name);
+  const audioConfig = { audioEncoding: "MP3" };
+  // Chirp 3 HD voices don't take pitch; keep the old tuning only for older voices.
+  if (!isChirp) {
+    audioConfig.speakingRate = 0.95;
+    audioConfig.pitch = -1.0;
+  }
+  return {
+    input: { text },
+    voice: { languageCode: name.split("-").slice(0, 2).join("-"), name },
+    audioConfig
+  };
+}
+
 async function generateVoiceover(script) {
   console.log("🎙️ Generating voiceover...");
   const auth = getGoogleAuth();
@@ -99,19 +121,7 @@ async function generateVoiceover(script) {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`
       },
-      body: JSON.stringify({
-        input: { text: cleanText },
-        voice: {
-          languageCode: "en-US",
-          name: "en-US-Neural2-D",
-          ssmlGender: "MALE"
-        },
-        audioConfig: {
-          audioEncoding: "MP3",
-          speakingRate: 0.95,
-          pitch: -1.0
-        }
-      })
+      body: JSON.stringify(buildTtsRequest(cleanText))
     }
   );
 
@@ -155,6 +165,81 @@ async function uploadToCloudinary(audioBase64) {
 // =========================
 // STEP 4 — PEXELS VIDEO
 // =========================
+// The Faceless Short template has 6 clip slots (Clip-1..Clip-6). Clips come from the
+// topic first, then MARKETING's safe B-roll searches. Anything whose Pexels page slug
+// mentions a blocked subject is skipped.
+const CLIP_SLOTS = 6;
+const SAFE_BROLL_SEARCHES = [
+  "signing documents",
+  "family at kitchen table",
+  "courthouse exterior",
+  "texas countryside",
+  "couple reviewing papers",
+  "grandparents with grandchildren",
+  "house front porch",
+  "office desk notebook"
+];
+const BLOCKED_CLIP_WORDS = /\b(funeral|coffin|casket|cemetery|grave|graveyard|tombstone|mourning|crying|tears|sad|hospital|patient|ambulance|death|dying|die|dies|died|dead|deceased|passed|gavel|judge|money|cash|dollar|bills|coins)\b/i;
+
+// "What Happens If You Die Without A Will In Texas" -> "will texas", not "What Happens If".
+const TOPIC_STOPWORDS = new Set("a an and are can do does for from how if in is it its of on or the to what when who why with without you your yours happens need explained".split(" "));
+function topicKeywords(topic) {
+  const words = String(topic || "").toLowerCase().replace(/[^a-z\s]/g, " ").split(/\s+/)
+    .filter(w => w.length > 2 && !TOPIC_STOPWORDS.has(w) && !BLOCKED_CLIP_WORDS.test(w));
+  return words.slice(0, 3).join(" ") || "family home";
+}
+
+function pickPortraitFile(video) {
+  const files = (video.video_files || [])
+    .filter(f => (f.quality === "hd" || f.quality === "sd") && f.height >= f.width)
+    .sort((a, b) => b.height - a.height);
+  return files.length ? files[0].link : null;
+}
+
+async function searchPexels(query, perPage) {
+  const response = await fetch(
+    `https://api.pexels.com/videos/search?query=${encodeURIComponent(query)}&per_page=${perPage}&orientation=portrait`,
+    { headers: { Authorization: (process.env.PEXELS_API_KEY || "").trim() } }
+  );
+  if (!response.ok) throw new Error("Pexels HTTP " + response.status);
+  const result = await response.json();
+  return result.videos || [];
+}
+
+async function fetchPexelsClips(topic, count = CLIP_SLOTS) {
+  console.log(`🎬 Fetching ${count} Pexels clips...`);
+  const clips = [];
+  const seen = new Set();
+  const queries = [topicKeywords(topic), ...SAFE_BROLL_SEARCHES];
+
+  for (let qi = 0; qi < queries.length && clips.length < count; qi++) {
+    const q = queries[qi];
+    const perQueryCap = qi === 0 ? 3 : 2; // up to 3 topic clips, then 2 per safe search for variety
+    let taken = 0;
+    let videos = [];
+    try { videos = await searchPexels(q, 10); } catch (e) { console.log("⚠️ Pexels search failed:", q, e.message); continue; }
+    for (const v of videos) {
+      if (clips.length >= count || taken >= perQueryCap) break;
+      if (seen.has(v.id) || BLOCKED_CLIP_WORDS.test(v.url || "")) continue;
+      const link = pickPortraitFile(v);
+      if (!link) continue;
+      seen.add(v.id);
+      clips.push(link);
+      taken++;
+    }
+  }
+
+  if (clips.length === 0) {
+    console.log("⚠️ No Pexels clips found; template defaults will be used.");
+    return [];
+  }
+  // Fill every slot, reusing clips if fewer than 6 were found.
+  while (clips.length < count) clips.push(clips[clips.length % Math.max(1, clips.length)]);
+  console.log(`✅ ${clips.length} clips ready`);
+  return clips;
+}
+
+// Legacy single-clip fetch, kept so the old template can still be used via CREATOMATE_TEMPLATE_ID.
 async function fetchPexelsVideo(topic) {
   console.log("🎬 Fetching Pexels background...");
   const keywords = topic.split(" ").slice(0, 3).join(" ");
@@ -203,18 +288,46 @@ async function fetchPexelsVideo(topic) {
 // =========================
 // STEP 5 — CREATOMATE
 // =========================
-async function renderWithCreatomate(script, audioUrl, bgUrl) {
-  console.log("🎨 Rendering with Creatomate...");
+// Faceless Short template (project "First Animated"), built Nov 3, 2026.
+// Dynamic layers: Voiceover, Clip-1..Clip-6, Hook, Logo, Handle. Subtitles are
+// transcribed from the voiceover by Creatomate while rendering (no captions field).
+// Brand set in the template: Hook-Wash navy #121E55, Hook-Rule red #E5222A,
+// Handle default (903) 561-8644. Roll back by setting CREATOMATE_TEMPLATE_ID to the
+// old 2890bb76-8448-4d37-be98-76b1f25ecd56 (that path uses the legacy single background).
+const FACELESS_TEMPLATE_ID = "daaa9d59-37c5-4c8a-8e08-2a545e38af85";
+const LEGACY_TEMPLATE_ID = "2890bb76-8448-4d37-be98-76b1f25ecd56";
+const FIRM_LOGO_URL = "https://irp.cdn-website.com/9b712ed2/dms3rep/multi/logo.webp";
+const FIRM_PHONE = "(903) 561-8644";
 
-  const modifications = {
-    voiceover: audioUrl,
-    captions: script
+function buildHook(topic) {
+  const t = String(topic || "").trim();
+  return t.length <= 60 ? t : t.slice(0, 57).replace(/\s+\S*$/, "") + "…";
+}
+
+function buildFacelessModifications(audioUrl, clips, topic) {
+  const mods = {
+    "Voiceover.source": audioUrl,
+    "Hook.text": buildHook(topic),
+    "Logo.source": FIRM_LOGO_URL,
+    "Handle.text": FIRM_PHONE
   };
+  clips.slice(0, CLIP_SLOTS).forEach((url, i) => { mods[`Clip-${i + 1}.source`] = url; });
+  return mods;
+}
 
-  // Only add background_video if we have a valid URL
-  if (bgUrl && bgUrl.startsWith("http")) {
-    modifications.background_video = bgUrl;
-    modifications["background_video.loop"] = true; // repeat short clips instead of going black
+async function renderWithCreatomate(script, audioUrl, bgUrl, topic, clips) {
+  console.log("🎨 Rendering with Creatomate...");
+  const templateId = (process.env.CREATOMATE_TEMPLATE_ID || FACELESS_TEMPLATE_ID).trim();
+
+  let modifications;
+  if (templateId === LEGACY_TEMPLATE_ID) {
+    modifications = { voiceover: audioUrl, captions: script };
+    if (bgUrl && bgUrl.startsWith("http")) {
+      modifications.background_video = bgUrl;
+      modifications["background_video.loop"] = true;
+    }
+  } else {
+    modifications = buildFacelessModifications(audioUrl, clips || [], topic);
   }
 
   const response = await fetch("https://api.creatomate.com/v1/renders", {
@@ -224,7 +337,7 @@ async function renderWithCreatomate(script, audioUrl, bgUrl) {
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      template_id: "2890bb76-8448-4d37-be98-76b1f25ecd56",
+      template_id: templateId,
       modifications
     })
   });
@@ -258,8 +371,10 @@ async function generateVideo(job) {
   console.log("📝 Script:", script);
   const audioBase64 = await generateVoiceover(script);
   const audioUrl = await uploadToCloudinary(audioBase64);
-  const bgUrl = await fetchPexelsVideo(job.topic);
-  const videoUrl = await renderWithCreatomate(script, audioUrl, bgUrl);
+  const usingLegacy = (process.env.CREATOMATE_TEMPLATE_ID || "").trim() === LEGACY_TEMPLATE_ID;
+  const bgUrl = usingLegacy ? await fetchPexelsVideo(job.topic) : null;
+  const clips = usingLegacy ? [] : await fetchPexelsClips(job.topic);
+  const videoUrl = await renderWithCreatomate(script, audioUrl, bgUrl, job.topic, clips);
   console.log("✅ Video ready:", videoUrl);
   return videoUrl;
 }
@@ -536,9 +651,15 @@ async function processJob(job) {
     stage = "cloudinary";
     const audioUrl = await withRetry("cloudinary", () => uploadToCloudinary(audioBase64));
     stage = "pexels";
-    const bgUrl = await withRetry("pexels", () => fetchPexelsVideo(job.topic)).catch(() => null);
+    const usingLegacy = (process.env.CREATOMATE_TEMPLATE_ID || "").trim() === LEGACY_TEMPLATE_ID;
+    const bgUrl = usingLegacy
+      ? await withRetry("pexels", () => fetchPexelsVideo(job.topic)).catch(() => null)
+      : null;
+    const clips = usingLegacy
+      ? []
+      : await withRetry("pexels", () => fetchPexelsClips(job.topic)).catch(() => []);
     stage = "render";
-    const videoUrl = await withRetry("render", () => renderWithCreatomate(script, audioUrl, bgUrl));
+    const videoUrl = await withRetry("render", () => renderWithCreatomate(script, audioUrl, bgUrl, job.topic, clips));
     await updateSheet(job, { status: "PROCESSING", note: "rendered " + videoUrl });
 
     // 2) Upload is NOT retried blindly: a timeout after YouTube accepted the file would duplicate it.
