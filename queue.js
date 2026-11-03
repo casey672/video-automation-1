@@ -179,7 +179,7 @@ const SAFE_BROLL_SEARCHES = [
   "house front porch",
   "office desk notebook"
 ];
-const BLOCKED_CLIP_WORDS = /\b(funeral|coffin|casket|cemetery|grave|graveyard|tombstone|mourning|crying|tears|sad|hospital|patient|ambulance|death|dying|die|dies|died|dead|deceased|passed|gavel|judge|money|cash|dollar|bills|coins)\b/i;
+const BLOCKED_CLIP_WORDS = /\b(funeral|coffin|casket|cemetery|grave|graveyard|tombstone|mourning|crying|tears|sad|hospital|patient|ambulance|death|dying|die|dies|died|dead|deceased|passed|gavel|judge|money|cash|dollar|dollars|bills|banknote|banknotes|coins|currency|credit|loan|debt|finance|financial|bank|banking|wallet|payment|invest|investment|stock|stocks|savings|tax|taxes|wealth|rich|price|cost)\b/i;
 
 // "What Happens If You Die Without A Will In Texas" -> "will texas", not "What Happens If".
 const TOPIC_STOPWORDS = new Set("a an and are can do does for from how if in is it its of on or the to what when who why with without you your yours happens need explained".split(" "));
