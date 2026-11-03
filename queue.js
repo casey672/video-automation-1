@@ -319,8 +319,42 @@ async function fetchPexelsImage(topic) {
   return null;
 }
 
+// Required closing for every blog draft. Appended in code, so it is present even if the model omits it.
+const BLOG_DISCLAIMER =
+  "This article is general information, not legal advice, and reading it does not create an attorney-client relationship. " +
+  "Every family's situation is different. If you'd like to talk through yours, call My Texas Estate Plan in Tyler at (903) 561-8644 " +
+  "or visit mytxestateplan.com. Attorney responsible for this content: Casey Cook, My Texas Estate Plan, PLLC.";
+
+// Automatic compliance gate (same rules MARKETING signed off for the video prompt).
+// Any match puts the draft on HOLD for human review instead of marking it ready.
+const BLOG_HOLD_RULES = [
+  { label: "dollar amount", re: /\$\s?\d/ },
+  { label: "percentage", re: /\d+(\.\d+)?\s?(%|percent\b)/i },
+  { label: "specific timeline", re: /\b\d+\s*(-|to)?\s*\d*\s*(days?|weeks?|months?|years?)\b/i },
+  { label: "guarantee/outcome promise", re: /\b(guarantee[ds]?|promise[ds]?|ensure[sd]? that|will (win|avoid probate|save you))\b/i },
+  // "best interest(s)" is a legal standard in guardianship and trust law, so it is allowed.
+  { label: "superlative or specialist claim", re: /\b(best(?! interests?\b)|top-rated|leading|expert|experts|specialist|specializ(e|es|ing)|#1|number one)\b/i },
+  { label: "absolute word", re: /\b(always|never)\b/i },
+  { label: "fear word", re: /\b(destroy\w*|nightmare|disaster\w*|ruin\w*|sabotag\w*|devastat\w*|catastroph\w*|dangerous)\b/i },
+  { label: "testimonial or past result", re: /\b(our clients? (said|says|told)|we (won|recovered|saved)|in a recent case|a client of ours)\b/i },
+  { label: "joke or irony marker", re: /\b(joke|kidding|lol|ha ha|dad joke|ironically)\b/i },
+  { label: "statute or case citation", re: /(§|\bsec(tion)?\.?\s*\d|\bv\.\s[A-Z])/ }
+];
+
+function checkBlogCompliance(text) {
+  const reasons = [];
+  for (const rule of BLOG_HOLD_RULES) {
+    const m = text.match(rule.re);
+    if (m) reasons.push(`${rule.label}: "${m[0]}"`);
+  }
+  return reasons;
+}
+
+// Generates a blog DRAFT only. Nothing is published or emailed from here.
+// Returns { status: "HOLD" | "READY_FOR_REVIEW", reasons, content, imageUrl }.
+// Even READY_FOR_REVIEW drafts need Casey (owner) to review before anything is posted.
 async function generateAndPostBlog(topic) {
-  console.log("📝 Generating blog for:", topic);
+  console.log("📝 Generating blog draft for:", topic);
 
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -334,34 +368,53 @@ async function generateAndPostBlog(topic) {
       max_tokens: 1500,
       messages: [{
         role: "user",
-        content: `Write an 800-word SEO blog post for My Texas Estate Plan, an estate planning law firm in Tyler, Texas.
+        content: `Write an educational blog post of about 800 words for My Texas Estate Plan, a Tyler, Texas estate planning and probate law firm led by attorney Casey Cook.
 
 TOPIC: ${topic}
 
-STRUCTURE:
-- H1: Keyword-optimized title
-- Introduction (2-3 sentences)
-- 3-4 main sections with H2 headers
-- FAQ section (3 questions)
-- Conclusion with CTA
+VOICE: a calm, friendly East Texas attorney explaining something to a neighbor. Plain English, short sentences, no legal jargon without a one-line explanation.
 
-RULES:
-- Include "estate planning attorney Tyler Texas" naturally
-- Plain English, no legal jargon
-- Reference Tyler or East Texas at least 3 times
-- End with: Call Casey at (903) 561-8644 or visit mytxestateplan.com
-- Return plain text only`
+STRUCTURE:
+- A clear title on the first line (no "#" symbols)
+- Introduction (2-3 sentences) naming a real situation families face
+- 3-4 sections with plain-text headings, each explaining how this generally works under Texas law
+- A short FAQ section (3 questions)
+- One practical next step the reader can take
+
+SEO: use the phrase "estate planning attorney in Tyler, Texas" once, naturally. Mention Tyler or East Texas where it fits, without stuffing.
+
+RULES (follow every one):
+- No jokes, sarcasm or irony about death, illness, grief or family conflict.
+- No guarantees or promises of outcomes. Say "can," "may" or "often," not "will."
+- No specific dollar amounts, percentages or timelines.
+- Do not cite statute section numbers, case names or court rules.
+- Do not use the words "best," "expert," "specialist," "specialize," "leading," "always" or "never."
+- No fear words such as destroy, nightmare, disaster, ruin, sabotage or dangerous.
+- Do not invent cases, clients, testimonials or quotes. Do not mention past results.
+- Do not write a disclaimer or sign-off; one is added automatically.
+- Return plain text only.`
       }]
     })
   });
 
   const data = await response.json();
-  const blogContent = data.content[0].text.trim();
-  console.log("✅ Blog generated:", blogContent.substring(0, 100));
+  if (!response.ok || !data.content || !data.content[0]) {
+    throw new Error("Blog generation failed: " + JSON.stringify(data.error || data).substring(0, 300));
+  }
+  const body = data.content[0].text.trim();
+  const blogContent = body + "\n\n" + BLOG_DISCLAIMER;
 
-  const imageUrl = await fetchPexelsImage(topic);
-  console.log("🖼️ Blog image:", imageUrl);
-  console.log("📝 Blog ready (Levitate disabled):", blogContent.substring(0, 100));
+  const reasons = checkBlogCompliance(body);
+  const status = reasons.length ? "HOLD" : "READY_FOR_REVIEW";
+  if (reasons.length) {
+    console.log(`⛔ Blog draft on HOLD (${topic}): ${reasons.join("; ")}`);
+  } else {
+    console.log(`✅ Blog draft passed automatic checks (${topic}); still needs owner review before posting.`);
+  }
+
+  const imageUrl = await fetchPexelsImage(topic).catch(() => null);
+  // Publishing stays disabled. Do not wire this to Levitate or any site without owner approval.
+  return { status, reasons, content: blogContent, imageUrl };
 }
 
 // =========================
@@ -498,7 +551,9 @@ async function processJob(job) {
     if (!ok) console.log(`🚨 UPLOADED BUT SHEET NOT UPDATED: ${job.jobId} ${ytUrl}`); // health check reconciles via description tag
 
     try {
-      await generateAndPostBlog(job.topic);
+      // Draft only: nothing is published. HOLD drafts are logged with the reasons.
+      const blog = await generateAndPostBlog(job.topic);
+      console.log(`📝 Blog draft status for ${job.jobId}: ${blog.status}`);
     } catch (blogErr) {
       console.log("⚠️ Blog generation failed:", blogErr.message);
     }
