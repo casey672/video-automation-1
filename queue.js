@@ -408,7 +408,8 @@ async function uploadToYouTube(videoUrl, title, jobId) {
         tags: ["estate planning", "texas", "wills", "trusts", "tyler texas"],
         categoryId: "27"
       },
-      status: { privacyStatus: "public" }
+      // YT_PRIVACY env: "public" (default), "unlisted" or "private". Use unlisted for test videos.
+      status: { privacyStatus: ["public", "unlisted", "private"].includes((process.env.YT_PRIVACY || "").trim()) ? process.env.YT_PRIVACY.trim() : "public" }
     },
     media: { body: fs.createReadStream(tmpPath) }
   });
