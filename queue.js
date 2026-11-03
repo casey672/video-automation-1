@@ -357,7 +357,7 @@ async function generateVideo(job) {
 // =========================
 // YOUTUBE UPLOAD
 // =========================
-async function uploadToYouTube(videoUrl, title) {
+async function uploadToYouTube(videoUrl, title, jobId) {
   console.log("📺 Uploading to YouTube:", title);
 
   const cleanTitle = title
@@ -366,17 +366,20 @@ async function uploadToYouTube(videoUrl, title) {
     .join(" ");
 
   const videoResponse = await fetch(videoUrl);
+  if (!videoResponse.ok) throw new Error("Rendered video download failed: HTTP " + videoResponse.status);
   const videoBuffer = await videoResponse.buffer();
   const tmpPath = `/tmp/${Date.now()}.mp4`;
   fs.writeFileSync(tmpPath, videoBuffer);
 
   const youtube = getYouTubeClient();
-  const res = await youtube.videos.insert({
+  let res;
+  try {
+  res = await youtube.videos.insert({
     part: ["snippet", "status"],
     requestBody: {
       snippet: {
         title: cleanTitle,
-        description: "Auto-generated estate planning video by My Texas Estate Plan. Call (903) 561-8644.",
+        description: "Auto-generated estate planning video by My Texas Estate Plan. Call (903) 561-8644.\n\n" + JOB_TAG_PREFIX + (jobId || ""),
         tags: ["estate planning", "texas", "wills", "trusts", "tyler texas"],
         categoryId: "27"
       },
@@ -385,7 +388,10 @@ async function uploadToYouTube(videoUrl, title) {
     media: { body: fs.createReadStream(tmpPath) }
   });
 
-  fs.unlinkSync(tmpPath);
+  } finally {
+    try { fs.unlinkSync(tmpPath); } catch (e) {}
+  }
+  if (!res || !res.data || !res.data.id) throw new Error("YouTube insert returned no video id");
   const ytUrl = `https://www.youtube.com/watch?v=${res.data.id}`;
   console.log("✅ Uploaded:", ytUrl);
   return ytUrl;
@@ -454,74 +460,183 @@ RULES:
 }
 
 // =========================
-// SHEET UPDATE
+// RELIABILITY HELPERS (hardening draft)
 // =========================
-async function updateSheet(rowIndex, updates) {
-  if (!process.env.SHEET_WEBHOOK) {
-    console.log("❌ SHEET_WEBHOOK missing");
-    return;
+const MAX_ATTEMPTS = 3;
+const JOB_TAG_PREFIX = "mtep-job-"; // written into the YouTube description for idempotency
+const seenJobs = new Map(); // jobId -> {state, ytUrl}; in-memory only, the Sheet is the source of truth
+
+function isPermanentError(err) {
+  if (err && err.permanentSheet) return true;
+  const m = String((err && err.message) || err);
+  // invalid_grant / 401 / 403 / quota errors will not fix themselves with a retry
+  return /invalid_grant|unauthorized_client|invalid_client|\b401\b|\b403\b|quotaExceeded|uploadLimitExceeded|Creatomate failed/i.test(m);
+}
+
+async function withRetry(label, fn) {
+  let lastErr;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      return await fn(attempt);
+    } catch (err) {
+      lastErr = err;
+      const permanent = isPermanentError(err);
+      console.log(`⚠️ ${label} attempt ${attempt}/${MAX_ATTEMPTS} failed${permanent ? " (permanent)" : ""}: ${err.message}`);
+      if (permanent || attempt === MAX_ATTEMPTS) break;
+      await new Promise(r => setTimeout(r, 5000 * Math.pow(3, attempt - 1))); // 5s, 15s
+    }
   }
+  throw new Error(`${label}: ${lastErr && lastErr.message}`);
+}
+
+function stageError(stage, err) {
+  // Never include tokens or keys; err.message from googleapis/fetch does not contain them,
+  // but trim it so a huge JSON body cannot land in the Sheet.
+  return `${stage}: ${String(err.message || err).slice(0, 300)}`;
+}
+
+// Looks for an already-uploaded video for this job in the channel's uploads playlist (1 quota unit per page)
+async function findExistingUpload(jobId) {
+  const youtube = getYouTubeClient();
+  const ch = await youtube.channels.list({ part: ["contentDetails"], mine: true });
+  const uploads = ch.data.items && ch.data.items[0] && ch.data.items[0].contentDetails.relatedPlaylists.uploads;
+  if (!uploads) return null;
+  const res = await youtube.playlistItems.list({ part: ["snippet"], playlistId: uploads, maxResults: 50 });
+  const tag = JOB_TAG_PREFIX + jobId;
+  const hit = (res.data.items || []).find(i => (i.snippet.description || "").includes(tag));
+  return hit ? `https://www.youtube.com/watch?v=${hit.snippet.resourceId.videoId}` : null;
+}
+
+// =========================
+// SHEET UPDATE (now checked + retried; returns true only on confirmed write)
+// =========================
+async function updateSheet(job, updates) {
+  if (!process.env.SHEET_WEBHOOK) {
+    console.log("❌ SHEET_WEBHOOK missing; row will be caught by the Apps Script health check as stale PROCESSING");
+    return false;
+  }
+  // Must match doPost.gs: token in body (web apps cannot read headers), row located by jobId.
+  const payload = { token: (process.env.RUN_TOKEN || "").trim(), jobId: job.jobId || "", rowIndex: job.row, topic: job.topic || "", updates };
   try {
-    const res = await fetch(process.env.SHEET_WEBHOOK, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ rowIndex, updates })
+    return await withRetry("sheet update", async () => {
+      const res = await fetch(process.env.SHEET_WEBHOOK, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        redirect: "follow"
+      });
+      const text = await res.text();
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      let body = {};
+      try { body = JSON.parse(text); } catch (e) { /* older doPost returns plain text */ }
+      if (body.ok === false) {
+        const e = new Error("doPost rejected: " + (body.error || "unknown"));
+        if (body.error !== "busy") e.permanentSheet = true; // unauthorized / job id not found etc. won't fix on retry
+        throw e;
+      }
+      console.log("📥 Sheet updated:", JSON.stringify(updates).slice(0, 200));
+      return true;
     });
-    const text = await res.text();
-    console.log("📥 Sheet response:", text);
   } catch (err) {
-    console.log("❌ Sheet update failed:", err.message);
+    console.log("❌ Sheet update failed after retries:", err.message);
+    return false;
   }
 }
 
 // =========================
-// PROCESS QUEUE
+// PROCESS QUEUE (idempotent: one upload per jobId)
 // =========================
+async function processJob(job) {
+  job.jobId = job.jobId || `r${job.row}-${crypto.createHash("sha1").update(String(job.topic)).digest("hex").slice(0, 10)}`;
+  const prior = seenJobs.get(job.jobId);
+  if (prior && (prior.state === "running" || prior.state === "done")) {
+    console.log(`↩️ Duplicate job ${job.jobId} ignored (${prior.state})`);
+    return;
+  }
+  seenJobs.set(job.jobId, { state: "running" });
+  await updateSheet(job, { status: "PROCESSING", jobId: job.jobId, note: "worker started " + new Date().toISOString() });
+
+  let stage = "pre-check";
+  try {
+    // 1) Idempotency: if a previous (crashed) run already uploaded this job, just record it.
+    const existing = await withRetry("youtube lookup", () => findExistingUpload(job.jobId)).catch(() => null);
+    if (existing) {
+      seenJobs.set(job.jobId, { state: "done", ytUrl: existing });
+      await updateSheet(job, { status: "DONE", youtubeUrl: existing, note: "recovered existing upload" });
+      return;
+    }
+
+    stage = "script";
+    const script = await withRetry("script", () => generateScript(job.topic, job.hook));
+    stage = "voiceover";
+    const audioBase64 = await withRetry("voiceover", () => generateVoiceover(script));
+    stage = "cloudinary";
+    const audioUrl = await withRetry("cloudinary", () => uploadToCloudinary(audioBase64));
+    stage = "pexels";
+    const bgUrl = await withRetry("pexels", () => fetchPexelsVideo(job.topic)).catch(() => null);
+    stage = "render";
+    const videoUrl = await withRetry("render", () => renderWithCreatomate(script, audioUrl, bgUrl));
+    await updateSheet(job, { status: "PROCESSING", note: "rendered " + videoUrl });
+
+    // 2) Upload is NOT retried blindly: a timeout after YouTube accepted the file would duplicate it.
+    stage = "youtube upload";
+    let ytUrl;
+    try {
+      ytUrl = await uploadToYouTube(videoUrl, job.topic, job.jobId);
+    } catch (err) {
+      const recovered = await findExistingUpload(job.jobId).catch(() => null);
+      if (!recovered) throw err;
+      ytUrl = recovered;
+    }
+    seenJobs.set(job.jobId, { state: "done", ytUrl });
+    const ok = await updateSheet(job, { status: "DONE", youtubeUrl: ytUrl });
+    if (!ok) console.log(`🚨 UPLOADED BUT SHEET NOT UPDATED: ${job.jobId} ${ytUrl}`); // health check reconciles via description tag
+
+    try {
+      await generateAndPostBlog(job.topic);
+    } catch (blogErr) {
+      console.log("⚠️ Blog generation failed:", blogErr.message);
+    }
+  } catch (err) {
+    seenJobs.set(job.jobId, { state: "error" });
+    console.log("❌ Job failed:", stageError(stage, err));
+    // Apps Script doPost (draft VideoWebhook_draft.gs) sends the failure alert email on status Error.
+    await updateSheet(job, { status: "Error", note: stageError(stage, err) });
+  }
+}
+
 async function processQueue() {
   if (processing) return;
   processing = true;
   console.log("🔥 QUEUE STARTED");
-
   try {
     while (queue.length > 0) {
       const job = queue.shift();
-      console.log("⚙️ Processing:", job);
-      await updateSheet(job.row, { status: "PROCESSING" });
-
       try {
-        const videoUrl = await generateVideo(job);
-        const ytUrl = await uploadToYouTube(videoUrl, job.topic);
-        await updateSheet(job.row, { status: "DONE", youtubeUrl: ytUrl });
-
-        try {
-          await generateAndPostBlog(job.topic);
-        } catch (blogErr) {
-          console.log("⚠️ Blog generation failed:", blogErr.message);
-        }
-
+        await processJob(job);
       } catch (err) {
-        console.log("❌ Job failed:", err.message);
-        await updateSheet(job.row, { status: "ERROR: " + err.message });
+        console.log("❌ Unexpected job crash:", err.message);
       }
     }
-  } catch (err) {
-    console.log("❌ Queue crashed:", err.message);
+  } finally {
+    processing = false;
   }
-
-  processing = false;
 }
 
 // =========================
 // ENQUEUE
 // =========================
 function enqueue(job) {
-  console.log("📦 Adding job to queue");
-  if (!job || !job.row) {
-    console.log("⚠️ Invalid job:", job);
-    return;
+  if (!job || !job.row || !job.topic) {
+    console.log("⚠️ Invalid job (needs row + topic)");
+    return { accepted: false, reason: "invalid" };
+  }
+  if (job.jobId && queue.some(j => j.jobId === job.jobId)) {
+    return { accepted: false, reason: "already queued" };
   }
   queue.push(job);
   processQueue();
+  return { accepted: true, position: queue.length };
 }
 
 module.exports = { enqueue };
